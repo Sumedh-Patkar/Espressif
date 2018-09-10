@@ -45,6 +45,22 @@ char* my_malloc(int n)
     } while(lptr != gptr);
     memcpy(&temp,minsizeptr,sizeof(struct header));
 
+    //change the next pointer of the free block above the best fit block
+    char *lptr2 = minsizeptr;
+    struct header temp2;
+    memcpy(&temp2,lptr2,sizeof(struct header));
+
+    while(temp2.next != minsizeptr)
+    {
+      lptr2 = temp2.next;
+      memcpy(&temp2,lptr2,sizeof(struct header));
+    }
+    if(lptr2 != minsizeptr)
+    {
+      temp2.next = minsizeptr + n + sizeof(struct header);
+      memcpy(lptr2,&temp2,sizeof(struct header));
+    }
+
     /*Make the next header*/
     lptr = (minsizeptr + n + sizeof(struct header));   //lptr now points to the remaning part of the free location
     gptr = lptr;                                      //update GPTR
@@ -87,11 +103,12 @@ void my_free(char *x)
 {
   gptr = x - sizeof(struct header);
   struct header temp;
-  // char *iteratePtr;
+  // struct header temp2;
+
   memcpy(&s,gptr,sizeof(struct header));        //s now points to the block being freed
   s.alloc_status = 'f';                         //mark current block as 'free'
 
-  char *lptr = gptr;
+  char *lptr = gptr;                            //pointer to find the next free block
   lptr=lptr + s.size + sizeof(struct header);
   memcpy(&temp,lptr,sizeof(struct header));
 
@@ -102,7 +119,7 @@ void my_free(char *x)
     memcpy(&temp,lptr,sizeof(struct header));
   }
   //now lptr points to the first free block
-
+  printf("FOUND %d\n",lptr);
   char *lptr2 = lptr;
   memcpy(&temp,lptr2,sizeof(struct header));
 
@@ -112,7 +129,7 @@ void my_free(char *x)
     if(temp.next == NULL)
     {
       printf("FAIL\n");
-
+      printf("LPTR2 = %d\n",lptr2);
     }
     lptr2 = temp.next;
     memcpy(&temp,lptr2,sizeof(struct header));
@@ -149,24 +166,43 @@ int main()
   memcpy(gptr,&s,sizeof(s));
 
   printf("GPTR = %d\n",gptr);
+
   char *p = my_malloc(4000);
   printf("P = %d\n",p);
   printf("GPTR = %d\n",gptr);
+
   char *q = my_malloc(1000);
   printf("Q = %d\n",q);
   printf("GPTR = %d\n",gptr);
+
   char *r = my_malloc(3000);
   printf("R = %d\n",r);
   printf("GPTR = %d\n",gptr);
+
   my_free(q);
   printf("GPTR = %d\n",gptr);
+  struct header *t = gptr;
+  printf("Q->next = %d\n",t->next);
+  t = t->next;
+  printf("S->next = %d\n",t->next);
+
   char *s = my_malloc(2000);
   printf("S = %d\n",s);
   printf("GPTR = %d\n",gptr);
-  // char *t = my_malloc(2000);
-  // printf("%d\n",t);
-  // my_free(s);
-  // my_free(t);
+  //t = s - sizeof(struct header);
+  //t = t + t->size + sizeof(struct header);
+  t = gptr;
+  printf("T->next = %d\n",t->next);
+  t = t->next;
+  printf("Q->next = %d\n",t->next);
+
+  char *u = my_malloc(2000);
+  printf("U = %d\n",u);
+  printf("GPTR = %d\n",gptr);
+
+  my_free(s);
+  printf("GPTR = %d\n",gptr);
+  // my_free(u);
   // my_free(p);
   my_free(r);
   printf("GPTR = %d\n",gptr);
