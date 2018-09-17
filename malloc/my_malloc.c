@@ -2,172 +2,204 @@
 #include<string.h>
 
 char buffer[16000];
-char *gptr = &buffer[0];
+struct header *gptr = (struct header *)buffer;
 
 struct header
 {
-	char *next;		//pointer to the next free location
+	struct header *next;		//pointer to the next free location
 	int size;					//size of the block
 	char alloc_status;			//'a' if allocated, 'f' if free
 }s;
 
 int maxsize = sizeof(buffer) - 2*sizeof(struct header);   //currently available maximum block size
 
-char* my_malloc(int n)
+void find_best_fit_block(struct header *minsizeptr,int requested_size)
 {
-  if(n > maxsize)						//enough space is not available
-  	return NULL;
-  else
+  struct header *lptr = gptr;
+  int minsize = sizeof(buffer);
+
+  do {
+    /*after this loop,
+    minsize has the size of the best fit block
+    and minsizeptr points to it
+    */
+    // memcpy(&temp,lptr,sizeof(struct header));
+
+    if((lptr->size >= requested_size + 2*sizeof(struct header)) && (lptr->size < minsize))
+    {
+      minsize = lptr->size;
+      minsizeptr = lptr;
+    }
+    // printf("PRINTING TEMP->NEXT = %d\n",temp.next);
+    // if(temp.next == 0)
+      // printf("LPTR = %d\n",lptr);
+    lptr = lptr->next;
+  } while(lptr != gptr);
+
+  // printf("\nINSIDE FINDING THE BEST FIT BLOCK\n");
+  // printf("\nMINSIZEPTR = %d\n",minsizeptr);
+}
+
+void set_above_header(struct header *minsizeptr,int requested_size)
+{
+  // printf("\nINSIDE SET ABOVE HEADER\n");
+  // printf("\nMINSIZEPTR = %d\n",minsizeptr);
+  struct header *lptr = minsizeptr;
+
+  while(lptr->next != minsizeptr)
   {
-    memcpy(&s,gptr,sizeof(s));			//copy header of free location to s
-  	char *lptr = gptr;			      	//iterator to find best fit block
-  	int minsize = sizeof(buffer);
-  	char *minsizeptr = gptr;	    	//points to best fit block
+    lptr = lptr->next;
+  }
 
-    struct header temp;           		//temporary structure object
+  //if it wasn't pointing to itself (i.e. it wasn't the only free block)
+  if(lptr != minsizeptr)
+  {
+    lptr->next = (struct header *)((char *)minsizeptr + sizeof(struct header) + requested_size);
+  }
+}
 
-    do {
-      /*after this loop,
-      minsize has the size of the best fit block
-      and minsizeptr points to it
-      */
-      memcpy(&temp,lptr,sizeof(struct header));
+void set_next_header(struct header *minsizeptr,int requested_size)
+{
+  // printf("\nINSIDE SET NEXT HEADER\n");
+  // printf("\nMINSIZEPTR = %d\n",minsizeptr);
+  struct header *lptr;
+  lptr = (struct header *)((char *)minsizeptr + sizeof(struct header) + requested_size);   //lptr now points to the remaning part of the free location
+  gptr = lptr;                                                  //update GPTR
 
-      if((temp.size >= n + 2*sizeof(struct header)) && (temp.size < minsize))
-      {
-        minsize = temp.size;
-        minsizeptr = lptr;
-      }
-      // printf("PRINTING TEMP->NEXT = %d\n",temp.next);
-      // if(temp.next == 0)
-        // printf("LPTR = %d\n",lptr);
-      lptr = temp.next;
-    } while(lptr != gptr);
-    memcpy(&temp,minsizeptr,sizeof(struct header));
+  /*if it was the ONLY existing free block, then it will point to itself*/
+  if(minsizeptr->next == minsizeptr)
+      lptr->next = lptr;
+  else
+      lptr->next = minsizeptr->next;
 
-    //change the next pointer of the free block above the best fit block
-    char *lptr2 = minsizeptr;
-    struct header temp2;
-    memcpy(&temp2,lptr2,sizeof(struct header));
+  lptr->size = minsizeptr->size - requested_size - 2*sizeof(struct header);
+  lptr->alloc_status = 'f';
+}
 
-    while(temp2.next != minsizeptr)
-    {
-      lptr2 = temp2.next;
-      memcpy(&temp2,lptr2,sizeof(struct header));
-    }
-    if(lptr2 != minsizeptr)
-    {
-      temp2.next = minsizeptr + n + sizeof(struct header);
-      memcpy(lptr2,&temp2,sizeof(struct header));
-    }
+void update_max_size(struct header *minsizeptr,int requested_size)
+{
+  // printf("\nINSIDE UPDATE MAX SIZE\n");
+  // printf("\nMINSIZEPTR = %d\n",minsizeptr);
+  maxsize = maxsize - requested_size - 2*sizeof(struct header);
+  struct header *lptr = (struct header *)((char *)minsizeptr + sizeof(struct header) + requested_size);
 
-    /*Make the next header*/
-    lptr = (minsizeptr + n + sizeof(struct header));   //lptr now points to the remaning part of the free location
-    gptr = lptr;                                      //update GPTR
+  struct header *temp = lptr;
+  do
+  {
+    if(lptr->size > maxsize)
+      maxsize = lptr->size;
 
-    /*if it was the ONLY existing free block, then it will point to itself*/
-    if(temp.next == minsizeptr)
-        s.next = lptr;
-    else
-        s.next = temp.next;
+    lptr = lptr->next;
+  }while(lptr != temp);
 
-    s.size = temp.size - n - 2*sizeof(struct header);
-    s.alloc_status = 'f';
-    memcpy(lptr,&s,sizeof(struct header));
+}
 
-    /*Update Max Size*/
-    if(temp.size == maxsize)
-    {
-      maxsize = maxsize - n - 2*sizeof(struct header);
-      lptr = temp.next;
-      do
-      {
-        memcpy(&s,lptr,sizeof(struct header));
-        if(s.size > maxsize)
-          maxsize = s.size;
-        lptr = s.next;
-      }while(lptr != minsizeptr);
-    }
+char* my_malloc(int requested_size)
+{
+  if(requested_size > maxsize)						//enough space is not available
+  	return NULL;
 
-    /*Update the current header*/
-    temp.next = NULL;
-    temp.size = n;
-    temp.alloc_status = 'a';
-    memcpy(minsizeptr,&temp,sizeof(struct header));
+  struct header *minsizeptr = gptr;     //points to the best fit block
 
-    return minsizeptr + sizeof(struct header);
+  /*find the best fit block*/
+  // printf("\nFINDING THE BEST FIT BLOCK\n");
+  find_best_fit_block(minsizeptr,requested_size);
+
+  /*change the next pointer of the free block above the best fit block*/
+  // printf("\nSET ABOVE HEADER\n");
+  set_above_header(minsizeptr,requested_size);
+
+  /*Make the next header*/
+  // printf("\nSET NEXT HEADER\n");
+  set_next_header(minsizeptr,requested_size);
+
+  /*Update Max Size*/
+  // printf("\nUPDATING MAX SIZE\n");
+  if(minsizeptr->size == maxsize)
+  {
+    update_max_size(minsizeptr,requested_size);
+  }
+
+  /*Update the current header*/
+  // printf("\nUPDATE CURRENT HEADER\n");
+  minsizeptr->next = NULL;
+  minsizeptr->size = requested_size;
+  minsizeptr->alloc_status = 'a';
+
+  return (char *)minsizeptr + sizeof(struct header);      //necessary to convert it to (char *) before adding
+}
+
+void get_next_free_block(struct header **next_free_pointer)
+{
+  *next_free_pointer = gptr;
+
+  *next_free_pointer=(struct header *)((char *)(*next_free_pointer) + gptr->size + sizeof(struct header));
+
+  //this loop finds the first free block after x
+  while((*next_free_pointer)->alloc_status != 'f')
+  {
+    *next_free_pointer = (struct header *)((char *)(*next_free_pointer) + (*next_free_pointer)->size + sizeof(struct header));
   }
 }
 
 void my_free(char *x)
 {
-  gptr = x - sizeof(struct header);
+  gptr = (struct header *)(x - sizeof(struct header));
   struct header temp;
-  // struct header temp2;
 
-  memcpy(&s,gptr,sizeof(struct header));        //s now points to the block being freed
-  s.alloc_status = 'f';                         //mark current block as 'free'
+  gptr->alloc_status = 'f';
 
-  char *lptr = gptr;                            //pointer to find the next free block
-  lptr=lptr + s.size + sizeof(struct header);
-  memcpy(&temp,lptr,sizeof(struct header));
+  struct header *next_free_pointer = gptr;
+  //pointer to find the next free block
+  get_next_free_block(&next_free_pointer);
 
-  //this loop finds the first free block after x
-  while(temp.alloc_status != 'f')
-  {
-    lptr = lptr + temp.size + sizeof(struct header);
-    memcpy(&temp,lptr,sizeof(struct header));
-  }
   //now lptr points to the first free block
-  printf("FOUND %d\n",lptr);
-  char *lptr2 = lptr;
-  memcpy(&temp,lptr2,sizeof(struct header));
+  struct header *above_pointer = next_free_pointer;
 
-  while(temp.next != lptr)
+  while(above_pointer->next != next_free_pointer)
   {
-    printf("%d\n",lptr2);
-    if(temp.next == NULL)
-    {
-      printf("FAIL\n");
-      printf("LPTR2 = %d\n",lptr2);
-    }
-    lptr2 = temp.next;
-    memcpy(&temp,lptr2,sizeof(struct header));
+    above_pointer = above_pointer->next;
   }
-  temp.next = gptr;
-  memcpy(lptr2,&temp,sizeof(struct header));
-  s.next = lptr;
-  memcpy(gptr,&s,sizeof(struct header));
+  above_pointer->next = gptr;
+  gptr->next = next_free_pointer;
 
   //if LOWER block and block to be freed are consecutive, merge them
-  if(gptr + s.size + sizeof(struct header) == lptr)           //check if next immediate block is free, in order to merge
+  if((char *)gptr + gptr->size + sizeof(struct header) == (char *)next_free_pointer)           //check if next immediate block is free, in order to merge
   {
-    s.size = s.size + temp.size + sizeof(struct header);
-    s.next = temp.next;
-    memcpy(gptr,&s,sizeof(struct header));
+    gptr->size = gptr->size + next_free_pointer->size + sizeof(struct header);
+    gptr->next = next_free_pointer->next;
   }
 
   //if upper block and block to be freed are consecutive, merge them
-  if(lptr2 + temp.size + sizeof(struct header) == gptr)
+  if((char *)above_pointer + above_pointer->size + sizeof(struct header) == (char *)gptr)
   {
-    temp.size = temp.size + s.size + sizeof(struct header);
-    temp.next = s.next;
-    gptr = lptr2;
-    memcpy(gptr,&temp,sizeof(struct header));
+    above_pointer->size = above_pointer->size + gptr->size + sizeof(struct header);
+    above_pointer->next = gptr->next;
+    gptr = above_pointer;
+    // memcpy(gptr,&temp,sizeof(struct header));
   }
 
 }
 
+void my_malloc_init()
+{
+  struct header *temp = (struct header *)buffer;
+
+  temp->size = sizeof(buffer) - 2*sizeof(s);
+  temp->next = temp;
+  temp->alloc_status = 'f';
+
+  // printf("temp->size = %d\ntemp->next = %d\ntemp->alloc_status = %c",temp->size,temp->next,temp->alloc_status);
+}
+
 int main()
 {
-  s.next = buffer;
-  s.size = sizeof(buffer) - 2*sizeof(s);
-  s.alloc_status = 'f';
-  memcpy(gptr,&s,sizeof(s));
+  my_malloc_init();
 
   printf("GPTR = %d\n",gptr);
+  printf("SIZE OF HEADER = %d\n",sizeof(struct header));
 
-  char *p = my_malloc(4000);
+  char *p = (char *)my_malloc(4000);
   printf("P = %d\n",p);
   printf("GPTR = %d\n",gptr);
 
@@ -206,5 +238,7 @@ int main()
   // my_free(p);
   my_free(r);
   printf("GPTR = %d\n",gptr);
+  t = gptr;
+  printf("T->SIZE = %d",t->size);
   return 0;
 }
