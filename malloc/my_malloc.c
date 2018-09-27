@@ -7,116 +7,97 @@ struct header *gptr = (struct header *)buffer;
 struct header
 {
 	struct header *next;		//pointer to the next free location
+  struct header *prev;    //pointer to the previous free location
+  struct header *above;   //pointer to the block immediately above itself
 	int size;					      //size of the block
 	char alloc_status;			//'a' if allocated, 'f' if free
 };
 
-int maxsize = sizeof(buffer) - 2*sizeof(struct header);   //currently available maximum block size
-
-void find_best_fit_block(struct header **minsizeptr,int requested_size)
+/*
+  This function returns pointer to the best fit block
+*/
+struct header* find_best_fit_block(int requested_size)
 {
   struct header *lptr = gptr;
-  int minsize = sizeof(buffer);
 
-  do {
-    /*after this loop,
-    minsize has the size of the best fit block
-    and minsizeptr points to it
-    */
-
-    if((lptr->size >= requested_size + 2*sizeof(struct header)) && (lptr->size < minsize))
-    {
-      minsize = lptr->size;
-      *minsizeptr = lptr;
-    }
-
-    lptr = lptr->next;
-  } while(lptr != gptr);
-
-}
-
-void set_above_header(struct header *minsizeptr,int requested_size)
-{
-  struct header *lptr = minsizeptr;
-
-  while(lptr->next != minsizeptr)
+  while(lptr->size >= requested_size + 2*(sizeof(struct header)) && lptr->next != NULL)
   {
     lptr = lptr->next;
   }
 
-  //if it wasn't pointing to itself (i.e. it wasn't the only free block)
-  if(lptr != minsizeptr)
-  {
-    lptr->next = (struct header *)((char *)minsizeptr + sizeof(struct header) + requested_size);
-  }
-}
-
-void set_next_header(struct header *minsizeptr,int requested_size)
-{
-  struct header *lptr;
-  //lptr now points to the remaning part of the free location
-  lptr = (struct header *)((char *)minsizeptr + sizeof(struct header) + requested_size);
-  gptr = lptr;                                                  //update GPTR
-
-  /*if it was the ONLY existing free block, then it will point to itself*/
-  if(minsizeptr->next == minsizeptr)
-      lptr->next = lptr;
+  if(lptr->next == NULL)    //if it is the last block
+    return lptr;
   else
-      lptr->next = minsizeptr->next;
-
-  lptr->size = minsizeptr->size - requested_size - 2*sizeof(struct header);
-  lptr->alloc_status = 'f';
+    return lptr->prev;
 }
 
-void update_max_size(struct header *minsizeptr,int requested_size)
+struct header* change_headers(struct header *best_fit_block_pointer,int requested_size)
 {
-  maxsize = maxsize - requested_size - 2*sizeof(struct header);
-  struct header *lptr = (struct header *)((char *)minsizeptr + sizeof(struct header) + requested_size);
-
-  struct header *temp = lptr;
-  do
+  if(best_fit_block_pointer->next != NULL)
   {
-    if(lptr->size > maxsize)
-      maxsize = lptr->size;
+    best_fit_block_pointer->next->prev = best_fit_block_pointer->prev;
+  }
+  if(best_fit_block_pointer->prev != NULL)
+  {
+    best_fit_block_pointer->prev->next = best_fit_block_pointer->next;
+  }
 
+  //this points to the remaining part of the block
+  struct header *lptr = best_fit_block_pointer + requested_size;
+  lptr->size = best_fit_block_pointer->size - requested_size - sizeof(struct header);
+  lptr->above = best_fit_block_pointer;
+  lptr->prev = NULL;
+  lptr->next = NULL;
+  lptr->alloc_status = 'f';
+
+  best_fit_block_pointer->size = requested_size;
+  best_fit_block_pointer->next = NULL;
+  best_fit_block_pointer->prev = NULL;
+  best_fit_block_pointer->alloc_status = 'a';
+
+  return lptr;
+}
+
+void insert_into_list(struct header *remaining_free_block)
+{
+  struct header *lptr = gptr;
+  while(lptr->size > remaining_free_block->size && lptr->next != NULL)
     lptr = lptr->next;
-  }while(lptr != temp);
 
+  if(lptr->next == NULL)
+  {
+    lptr->next = remaining_free_block;
+    remaining_free_block->prev = lptr;
+  }
+  else
+  {
+    remaining_free_block->prev = lptr->prev;
+    remaining_free_block->next = lptr;
+
+    if(lptr->prev != NULL)
+    {
+      lptr->prev->next = remaining_free_block;
+    }
+    lptr->prev = remaining_free_block;
+  }
 }
 
 char* my_malloc(int requested_size)
 {
-  if(requested_size > maxsize)						//enough space is not available
+  if(requested_size > gptr->size)						//enough space is not available
   	return NULL;
 
-  struct header *minsizeptr = gptr;     //points to the best fit block
-
   /*find the best fit block*/
-  // printf("\nFINDING THE BEST FIT BLOCK\n");
-  find_best_fit_block(&minsizeptr,requested_size);
+  struct header *best_fit_block_pointer = find_best_fit_block(requested_size);
+  best_fit_block_pointer->alloc_status = 'a';
 
-  /*change the next pointer of the free block above the best fit block*/
-  // printf("\nSET ABOVE HEADER\n");
-  set_above_header(minsizeptr,requested_size);
+  /* change all pointers*/
+  struct header *remaining_free_block = change_headers(best_fit_block_pointer,requested_size);
 
-  /*Make the next header*/
-  // printf("\nSET NEXT HEADER\n");
-  set_next_header(minsizeptr,requested_size);
+  /*Insert it into the linked list of free blocks into its appropriate position*/
+  insert_into_list(remaining_free_block);
 
-  /*Update Max Size*/
-  // printf("\nUPDATING MAX SIZE\n");
-  if(minsizeptr->size == maxsize)
-  {
-    update_max_size(minsizeptr,requested_size);
-  }
-
-  /*Update the current header*/
-  // printf("\nUPDATE CURRENT HEADER\n");
-  minsizeptr->next = NULL;
-  minsizeptr->size = requested_size;
-  minsizeptr->alloc_status = 'a';
-
-  return (char *)minsizeptr + sizeof(struct header);      //necessary to convert it to (char *) before adding
+  return (char *)best_fit_block_pointer + sizeof(struct header);      //necessary to convert it to (char *) before adding
 }
 
 void get_next_free_block(struct header **next_free_pointer)
@@ -188,13 +169,11 @@ void my_free(char *x)
 
 void my_malloc_init()
 {
-  struct header *temp = (struct header *)buffer;
-
-  temp->size = sizeof(buffer) - 2*sizeof(struct header);
-  temp->next = temp;
-  temp->alloc_status = 'f';
-
-  // printf("temp->size = %d\ntemp->next = %d\ntemp->alloc_status = %c",temp->size,temp->next,temp->alloc_status);
+  gptr->size = sizeof(buffer) - 2*sizeof(struct header);
+  gptr->next = NULL;
+  gptr->prev = NULL;
+  gptr->above = NULL;
+  gptr->alloc_status = 'f';
 }
 
 int main()
